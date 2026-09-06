@@ -1,0 +1,89 @@
+{
+  "name": "Ad Factory Core",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ad-factory/generate",
+        "responseMode": "responseNode"
+      },
+      "id": "webhook-generate",
+      "name": "Generate Request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body ?? $json;\nif (!body.product || !body.platform) throw new Error('product and platform are required');\nreturn [{json:{...body, requestedAt:new Date().toISOString(), status:'queued'}}];"
+      },
+      "id": "validate",
+      "name": "Validate Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.AD_FACTORY_CORE_URL + '/v1/creative/brief'}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name":"Authorization","value":"={{'Bearer ' + $env.AD_FACTORY_CORE_TOKEN}}"}
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{JSON.stringify($json)}}"
+      },
+      "id": "brief",
+      "name": "Build Creative Brief",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.AD_FACTORY_CORE_URL + '/v1/generate'}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name":"Authorization","value":"={{'Bearer ' + $env.AD_FACTORY_CORE_TOKEN}}"}
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{JSON.stringify($json)}}"
+      },
+      "id": "generate",
+      "name": "Generate Assets",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 0]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{JSON.stringify($json)}}"
+      },
+      "id": "response",
+      "name": "Return Job",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [880, 0]
+    }
+  ],
+  "connections": {
+    "Generate Request": {"main":[[{"node":"Validate Request","type":"main","index":0}]]},
+    "Validate Request": {"main":[[{"node":"Build Creative Brief","type":"main","index":0}]]},
+    "Build Creative Brief": {"main":[[{"node":"Generate Assets","type":"main","index":0}]]},
+    "Generate Assets": {"main":[[{"node":"Return Job","type":"main","index":0}]]}
+  },
+  "settings": {"executionOrder":"v1"},
+  "active": false,
+  "meta": {"templateCredsSetupCompleted": false}
+}
