@@ -15,7 +15,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const body = $json.body ?? $json;\nif (!body.product || !body.platform) throw new Error('product and platform are required');\nreturn [{json:{...body, requestedAt:new Date().toISOString(), status:'queued'}}];"
+        "jsCode": "const b = $json.body ?? $json;\nfor (const k of ['brandId','brandSlug','productId','creativeId','brief']) if (!b[k]) throw new Error(k + ' is required');\nreturn [{json:b}];"
       },
       "id": "validate",
       "name": "Validate Request",
@@ -26,44 +26,17 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{$env.AD_FACTORY_CORE_URL + '/v1/creative/brief'}}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {"name":"Authorization","value":"={{'Bearer ' + $env.AD_FACTORY_CORE_TOKEN}}"}
-          ]
-        },
+        "url": "={{$env.AD_FACTORY_CORE_URL + '/v1/generate/image'}}",
         "sendBody": true,
         "contentType": "raw",
         "rawContentType": "application/json",
         "body": "={{JSON.stringify($json)}}"
       },
-      "id": "brief",
-      "name": "Build Creative Brief",
+      "id": "generate-image",
+      "name": "Generate Nano Banana Image",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [440, 0]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "={{$env.AD_FACTORY_CORE_URL + '/v1/generate'}}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {"name":"Authorization","value":"={{'Bearer ' + $env.AD_FACTORY_CORE_TOKEN}}"}
-          ]
-        },
-        "sendBody": true,
-        "contentType": "raw",
-        "rawContentType": "application/json",
-        "body": "={{JSON.stringify($json)}}"
-      },
-      "id": "generate",
-      "name": "Generate Assets",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [660, 0]
     },
     {
       "parameters": {
@@ -71,19 +44,21 @@
         "responseBody": "={{JSON.stringify($json)}}"
       },
       "id": "response",
-      "name": "Return Job",
+      "name": "Return Asset",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
-      "position": [880, 0]
+      "position": [660, 0]
     }
   ],
   "connections": {
     "Generate Request": {"main":[[{"node":"Validate Request","type":"main","index":0}]]},
-    "Validate Request": {"main":[[{"node":"Build Creative Brief","type":"main","index":0}]]},
-    "Build Creative Brief": {"main":[[{"node":"Generate Assets","type":"main","index":0}]]},
-    "Generate Assets": {"main":[[{"node":"Return Job","type":"main","index":0}]]}
+    "Validate Request": {"main":[[{"node":"Generate Nano Banana Image","type":"main","index":0}]]},
+    "Generate Nano Banana Image": {"main":[[{"node":"Return Asset","type":"main","index":0}]]}
   },
   "settings": {"executionOrder":"v1"},
   "active": false,
-  "meta": {"templateCredsSetupCompleted": false}
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "notes": "Requires AD_FACTORY_CORE_URL. Workflow stays inactive until Worker deployment and secrets are configured."
+  }
 }
