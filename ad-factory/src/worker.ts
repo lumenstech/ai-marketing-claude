@@ -1,5 +1,6 @@
 import { createRepository } from './db.js';
 import { NanoBananaProvider } from './nano-banana.js';
+import { planMutations } from './mutation.js';
 import { scoreCreative } from './scoring.js';
 import { persistGeneratedAsset, type ObjectBucket } from './storage.js';
 import type { CreativeBrief, PerformanceMetrics } from './types.js';
@@ -28,7 +29,7 @@ export default {
 
     if (request.method === 'GET' && url.pathname === '/health') {
       const ok = await repo.health();
-      return json({ ok, service: 'ad-factory-core', capabilities: { database: ok, auth: Boolean(env.AD_FACTORY_TOKEN), imageGeneration: Boolean(env.GEMINI_API_KEY), assetStorage: Boolean(env.ASSETS) } }, ok ? 200 : 503);
+      return json({ ok, service: 'ad-factory-core', capabilities: { database: ok, auth: Boolean(env.AD_FACTORY_TOKEN), imageGeneration: Boolean(env.GEMINI_API_KEY), assetStorage: Boolean(env.ASSETS), mutationProcessor: true } }, ok ? 200 : 503);
     }
     if (!authorized(request, env)) return json({ error: 'unauthorized' }, 401);
 
@@ -73,6 +74,32 @@ export default {
       let mutation = null;
       if (result.mutate) mutation = await repo.enqueueMutation({ creativeId:input.creativeId, reason:result.reasons.join('; '), generation:(input.generation ?? 0)+1 });
       return json({ score:saved, mutation }, 201);
+    }
+
+    if (request.method === 'POST' && url.pathname === '/v1/mutations/process-next') {
+      const queued = await repo.claimNextMutation();
+      if (!queued) return json({ processed:false, reason:'queue_empty' }, 200);
+      try {
+        const parent = await repo.getCreative(queued.creative_id);
+        if (!parent) throw new Error('parent_creative_not_found');
+        const parentBrief = parent.brief as CreativeBrief;
+        const planned = planMutations(parentBrief);
+        const variants = [];
+        for (const mutation of planned) {
+          variants.push(await repo.createMutationExperiment({
+            queueId: queued.id,
+            parentCreative: parent,
+            generation: queued.generation,
+            mutation
+          }));
+        }
+        await repo.completeMutation({ queueId: queued.id });
+        return json({ processed:true, queueId:queued.id, parentCreativeId:parent.id, generation:queued.generation, variants }, 201);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'mutation_processing_failed';
+        await repo.completeMutation({ queueId: queued.id, error: message });
+        return json({ processed:false, queueId:queued.id, error:message }, 500);
+      }
     }
 
     return json({ error: 'not_found' }, 404);
