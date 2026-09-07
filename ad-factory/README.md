@@ -1,65 +1,75 @@
 # Ad Factory Core
 
-Provider-neutral creative production and testing infrastructure for short-form advertising.
+Owned creative-production infrastructure for short-form advertising.
+
+## Primary flow
+
+`Product -> planner -> persisted creative variants -> generation jobs -> Nano Banana -> R2 -> Neon creative library`
+
+Meta, TikTok, OAuth and paid publishing are not dependencies of the production path. Distribution and performance measurement are optional downstream adapters.
 
 ## Architecture
 
-- Existing `/market ads` skill: upstream business analysis, hooks, personas, scripts, objections and campaign angles.
-- Neon: canonical system of record for brands, products, creatives, experiments, publications, metrics and winner scores.
-- Cloudflare R2: intended durable asset storage for generated media.
-- n8n: orchestration only. It must not become the source of truth.
-- Nano Banana: image/source-frame generation adapter.
-- Linah: video provider behind a transport interface. Official endpoint/schema must be supplied before activation.
-- Future video/image providers implement the same interfaces without changing core creative records.
+- Existing `/market ads` skill: upstream marketing analysis and campaign intelligence.
+- Neon: canonical source of truth for products, creatives, jobs, assets, experiments and metrics.
+- Cloudflare Worker: API plus scheduled job processor.
+- Cloudflare R2: generated asset storage.
+- Nano Banana: source-image and first-frame generation.
+- Video providers: interchangeable adapters; Linah remains disabled until a verified contract/API is available.
+- n8n: optional orchestration, never the system of record.
 
-## Current state
+## Implemented
 
-Implemented in this module:
+- Credential-free product-to-creative planner.
+- `POST /v1/factory/run` batch planning/persistence/job creation.
+- Creative library endpoints.
+- Claim-safe generation jobs with five-minute leases and bounded retries.
+- Scheduled Worker processor every five minutes.
+- Nano Banana generation and R2 persistence.
+- Creative/asset linkage in Neon.
+- Winner scoring, controlled mutation and experiment evaluation infrastructure.
+- Development migrations `001` through `006`.
 
-1. Core TypeScript domain types.
-2. ImageGenerator, VideoGenerator, Publisher and MetricsProvider interfaces.
-3. Nano Banana adapter using `@google/genai`.
-4. Linah adapter boundary that fails closed until official API details are configured.
-5. Neon SQL migration for brands, products, assets, creatives, publications, metric snapshots, experiments and creative scores.
-6. Winner scoring engine with a minimum-data mutation gate.
-7. Importable n8n workflow skeleton for request -> brief -> generation -> response.
-8. Unit tests for winner mutation gating.
+## Runtime configuration
 
-## Safety / deployment boundaries
+Values are never committed. The Worker uses its R2 binding directly, so separate R2 access-key variables are not required.
 
-This branch does not:
-
-- modify any production Neon database;
-- add or expose provider secrets;
-- publish any live ads;
-- invent undocumented Linah endpoints;
-- activate the n8n workflow.
-
-Those require deployment credentials and verified provider contracts.
-
-## Activation variables
-
-Do not commit values. Runtime configuration may use:
+Required for the full generation path:
 
 - `DATABASE_URL`
-- `R2_ACCOUNT_ID`
-- `R2_ACCESS_KEY_ID`
-- `R2_SECRET_ACCESS_KEY`
-- `R2_BUCKET`
 - `GEMINI_API_KEY`
-- `NANO_BANANA_MODEL`
-- `AD_FACTORY_CORE_URL`
-- `AD_FACTORY_CORE_TOKEN`
-- Linah credentials/endpoint names matching its official documentation
-- Meta/TikTok publishing and metrics credentials when publishing adapters are enabled
+- `AD_FACTORY_TOKEN`
 
-## Recommended rollout
+Optional:
 
-1. Apply `sql/001_ad_factory_core.sql` to a non-production Neon branch.
-2. Run `npm install && npm run typecheck && npm test` in this directory.
-3. Implement the HTTP service around the provider interfaces.
-4. Connect R2 persistence.
-5. Import `workflows/ad-factory-core.n8n.json` and keep inactive until endpoint authentication is configured.
-6. Add official Linah transport after API documentation/credentials are available.
-7. Add publishing adapters in approval mode first.
-8. Enable winner mutation only after platform metric ingestion is verified.
+- `NANO_BANANA_MODEL` (defaults to `gemini-3.1-flash-image`)
+
+Normal operation does not require Meta/TikTok credentials.
+
+## Cloudflare deployment
+
+From `ad-factory/` on an already authenticated machine:
+
+```sh
+npm install
+npm run typecheck
+npm test
+npm run cf:bootstrap
+```
+
+`cf:bootstrap` is deliberately non-interactive. It:
+
+1. verifies the machine is already authenticated with Wrangler;
+2. creates the production/development R2 buckets if missing;
+3. copies `DATABASE_URL`, `GEMINI_API_KEY` and `AD_FACTORY_TOKEN` from existing shell environment variables only when they are already present;
+4. runs a Wrangler dry-run;
+5. deploys the Worker.
+
+It never prints secret values and does not ask the operator to type credentials into the script.
+
+## Safety boundaries
+
+- No live ad publishing or spend is enabled.
+- Synthetic testimonials and unsupported product claims are prohibited by the creative/mutation design.
+- Linah calls remain disabled until its official API and output-rights terms are verified.
+- Provider secrets stay outside Git.
