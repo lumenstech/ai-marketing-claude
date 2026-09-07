@@ -1,0 +1,19 @@
+name = "lumens-ad-factory"
+main = "src/worker.ts"
+compatibility_date = "2026-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+[observability]
+enabled = true
+
+[[r2_buckets]]
+binding = "ASSETS"
+bucket_name = "lumens-ad-factory-assets"
+preview_bucket_name = "lumens-ad-factory-assets-dev"
+
+# Secrets are intentionally not committed.
+# Required at activation time:
+#   DATABASE_URL
+#   GEMINI_API_KEY
+# Optional:
+#   NANO_BANANA_MODEL (defaults to gemini-3.1-flash-image)
