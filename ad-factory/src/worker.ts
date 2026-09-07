@@ -1,6 +1,7 @@
 import { createRepository } from './db.js';
 import { createExperimentStore } from './experiment-store.js';
 import { evaluateExperiment, type EvaluationRules } from './evaluation.js';
+import { runFactory, type FactoryRunInput } from './factory.js';
 import { createCreativeLibrary } from './library.js';
 import { NanoBananaProvider } from './nano-banana.js';
 import { planMutations } from './mutation.js';
@@ -16,10 +17,11 @@ function authorized(request:Request,env:Env){if(!env.AD_FACTORY_TOKEN)return fal
 
 export default { async fetch(request:Request,env:Env):Promise<Response>{
   const url=new URL(request.url); const repo=createRepository(env.DATABASE_URL); const experiments=createExperimentStore(env.DATABASE_URL); const library=createCreativeLibrary(env.DATABASE_URL);
-  if(request.method==='GET'&&url.pathname==='/health'){const ok=await repo.health();return json({ok,service:'ad-factory-core',capabilities:{database:ok,auth:Boolean(env.AD_FACTORY_TOKEN),creativePlanner:true,creativeLibrary:true,imageGeneration:Boolean(env.GEMINI_API_KEY),assetStorage:Boolean(env.ASSETS),mutationProcessor:true,experimentEvaluator:true}},ok?200:503)}
+  if(request.method==='GET'&&url.pathname==='/health'){const ok=await repo.health();return json({ok,service:'ad-factory-core',capabilities:{database:ok,auth:Boolean(env.AD_FACTORY_TOKEN),creativePlanner:true,factoryRun:true,creativeLibrary:true,imageGeneration:Boolean(env.GEMINI_API_KEY),assetStorage:Boolean(env.ASSETS),mutationProcessor:true,experimentEvaluator:true}},ok?200:503)}
   if(!authorized(request,env))return json({error:'unauthorized'},401);
 
   if(request.method==='POST'&&url.pathname==='/v1/plan'){const input=await body<{product:ProductInput;options?:PlanOptions}>(request);if(!input.product?.id||!input.product?.brandId||!input.product?.name)return json({error:'invalid_product'},400);const briefs=planCreatives(input.product,input.options);return json({count:briefs.length,briefs},200)}
+  if(request.method==='POST'&&url.pathname==='/v1/factory/run'){const input=await body<FactoryRunInput>(request);if(!input.product?.id||!input.product?.brandId||!input.product?.name||!input.brandSlug)return json({error:'invalid_factory_input'},400);return json(await runFactory(repo,input),201)}
   if(request.method==='GET'&&url.pathname==='/v1/library'){return json(await library.list({brandId:url.searchParams.get('brandId')??undefined,productId:url.searchParams.get('productId')??undefined,status:url.searchParams.get('status')??undefined,limit:Number(url.searchParams.get('limit')??50)}),200)}
   if(request.method==='GET'&&url.pathname.startsWith('/v1/library/')){const creativeId=url.pathname.slice('/v1/library/'.length);const item=await library.get(creativeId);return item?json(item,200):json({error:'creative_not_found'},404)}
   if(request.method==='POST'&&url.pathname==='/v1/brands')return json(await repo.upsertBrand(await body(request)),201);
