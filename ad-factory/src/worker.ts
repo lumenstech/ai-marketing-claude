@@ -95,9 +95,9 @@ export default {
     }
 
     if (request.method === 'POST' && url.pathname === '/v1/score') {
-      const input = await body<{ creativeId: string; metrics: Parameters<typeof scoreCreative>[0] }>(request);
-      const result = scoreCreative(input.metrics);
-      return json(await repo.recordScore({ creativeId: input.creativeId, ...result }), 201);
+      const input = await body<{ creativeId: string; metrics: Parameters<typeof scoreCreative>[1] }>(request);
+      const result = scoreCreative(input.creativeId, input.metrics);
+      return json(await repo.recordScore(result), 201);
     }
 
     return json({ error: 'not_found' }, 404);
