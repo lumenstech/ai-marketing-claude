@@ -1,0 +1,64 @@
+{
+  "name": "Ad Factory Core",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ad-factory/generate",
+        "responseMode": "responseNode"
+      },
+      "id": "webhook-generate",
+      "name": "Generate Request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const b = $json.body ?? $json;\nfor (const k of ['brandId','brandSlug','productId','creativeId','brief']) if (!b[k]) throw new Error(k + ' is required');\nreturn [{json:b}];"
+      },
+      "id": "validate",
+      "name": "Validate Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.AD_FACTORY_CORE_URL + '/v1/generate/image'}}",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{JSON.stringify($json)}}"
+      },
+      "id": "generate-image",
+      "name": "Generate Nano Banana Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{JSON.stringify($json)}}"
+      },
+      "id": "response",
+      "name": "Return Asset",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [660, 0]
+    }
+  ],
+  "connections": {
+    "Generate Request": {"main":[[{"node":"Validate Request","type":"main","index":0}]]},
+    "Validate Request": {"main":[[{"node":"Generate Nano Banana Image","type":"main","index":0}]]},
+    "Generate Nano Banana Image": {"main":[[{"node":"Return Asset","type":"main","index":0}]]}
+  },
+  "settings": {"executionOrder":"v1"},
+  "active": false,
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "notes": "Requires AD_FACTORY_CORE_URL. Workflow stays inactive until Worker deployment and secrets are configured."
+  }
+}
