@@ -1,4 +1,6 @@
 import { createRepository } from './db.js';
+import { createExperimentStore } from './experiment-store.js';
+import { evaluateExperiment, type EvaluationRules } from './evaluation.js';
 import { NanoBananaProvider } from './nano-banana.js';
 import { planMutations } from './mutation.js';
 import { scoreCreative } from './scoring.js';
@@ -26,10 +28,11 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const repo = createRepository(env.DATABASE_URL);
+    const experiments = createExperimentStore(env.DATABASE_URL);
 
     if (request.method === 'GET' && url.pathname === '/health') {
       const ok = await repo.health();
-      return json({ ok, service: 'ad-factory-core', capabilities: { database: ok, auth: Boolean(env.AD_FACTORY_TOKEN), imageGeneration: Boolean(env.GEMINI_API_KEY), assetStorage: Boolean(env.ASSETS), mutationProcessor: true } }, ok ? 200 : 503);
+      return json({ ok, service: 'ad-factory-core', capabilities: { database: ok, auth: Boolean(env.AD_FACTORY_TOKEN), imageGeneration: Boolean(env.GEMINI_API_KEY), assetStorage: Boolean(env.ASSETS), mutationProcessor: true, experimentEvaluator: true } }, ok ? 200 : 503);
     }
     if (!authorized(request, env)) return json({ error: 'unauthorized' }, 401);
 
@@ -86,20 +89,28 @@ export default {
         const planned = planMutations(parentBrief);
         const variants = [];
         for (const mutation of planned) {
-          variants.push(await repo.createMutationExperiment({
-            queueId: queued.id,
-            parentCreative: parent,
-            generation: queued.generation,
-            mutation
-          }));
+          variants.push(await repo.createMutationExperiment({ queueId:queued.id, parentCreative:parent, generation:queued.generation, mutation }));
         }
-        await repo.completeMutation({ queueId: queued.id });
+        await repo.completeMutation({ queueId:queued.id });
         return json({ processed:true, queueId:queued.id, parentCreativeId:parent.id, generation:queued.generation, variants }, 201);
       } catch (error) {
         const message = error instanceof Error ? error.message : 'mutation_processing_failed';
-        await repo.completeMutation({ queueId: queued.id, error: message });
+        await repo.completeMutation({ queueId:queued.id, error:message });
         return json({ processed:false, queueId:queued.id, error:message }, 500);
       }
+    }
+
+    if (request.method === 'POST' && url.pathname === '/v1/experiments/evaluate') {
+      const input = await body<{ experimentId:string; rules?:EvaluationRules }>(request);
+      const experiment = await experiments.getExperiment(input.experimentId);
+      if (!experiment) return json({ error:'experiment_not_found' }, 404);
+      const control = await experiments.getVariantMetrics(input.experimentId, 'control');
+      const challenger = await experiments.getVariantMetrics(input.experimentId, 'challenger');
+      if (!control || !challenger) return json({ error:'experiment_variants_missing' }, 409);
+      const evaluation = evaluateExperiment(control.metrics, challenger.metrics, input.rules ?? {});
+      const saved = await experiments.saveEvaluation(input.experimentId, evaluation, control.metrics, challenger.metrics);
+      await experiments.applyOutcome({ experimentId:input.experimentId, outcome:evaluation.outcome, controlCreativeId:control.creativeId, challengerCreativeId:challenger.creativeId });
+      return json({ evaluation:saved, control, challenger }, 200);
     }
 
     return json({ error: 'not_found' }, 404);
